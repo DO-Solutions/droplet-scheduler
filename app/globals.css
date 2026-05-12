@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --do-dark: #0C1B33;
+  --do-navy: #1A2332;
+  --do-card: #1E2D3D;
+  --do-border: #2A3F55;
+  --do-blue: #0080FF;
+  --do-text: #E8EDF2;
+  --do-muted: #7B9AB2;
+}
+
+body {
+  background-color: var(--do-dark);
+  color: var(--do-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.btn-primary {
+  @apply bg-do-blue hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-150;
+}
+
+.btn-secondary {
+  @apply bg-do-card hover:bg-do-border text-do-text font-medium px-4 py-2 rounded-lg border border-do-border transition-colors duration-150;
+}
+
+.btn-danger {
+  @apply bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-150;
+}
+
+.card {
+  @apply bg-do-card border border-do-border rounded-xl p-5;
+}
+
+.input {
+  @apply bg-do-navy border border-do-border rounded-lg px-3 py-2 text-do-text placeholder-do-muted focus:outline-none focus:ring-2 focus:ring-do-blue focus:border-transparent w-full;
+}
+
+.select {
+  @apply bg-do-navy border border-do-border rounded-lg px-3 py-2 text-do-text focus:outline-none focus:ring-2 focus:ring-do-blue focus:border-transparent;
+}
+
+.badge-success {
+  @apply bg-green-900 text-green-300 text-xs font-medium px-2 py-0.5 rounded-full;
+}
+
+.badge-failed {
+  @apply bg-red-900 text-red-300 text-xs font-medium px-2 py-0.5 rounded-full;
+}
+
+.badge-pending {
+  @apply bg-yellow-900 text-yellow-300 text-xs font-medium px-2 py-0.5 rounded-full;
+}
+
+.badge-active {
+  @apply bg-green-900 text-green-300 text-xs font-medium px-2 py-0.5 rounded-full;
+}
+
+.badge-off {
+  @apply bg-gray-700 text-gray-300 text-xs font-medium px-2 py-0.5 rounded-full;
+}
