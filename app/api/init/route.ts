@@ -5,7 +5,7 @@ import { getScheduler } from "@/lib/scheduler";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const hasKey = !!getSetting("api_key");
+  const hasKey = !!(await getSetting("api_key"));
   if (hasKey) {
     getScheduler();
   }

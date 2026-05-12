@@ -15,6 +15,14 @@ spec:
     - key: NODE_ENV
       scope: RUN_AND_BUILD_TIME
       value: production
+    - key: DATABASE_URL
+      scope: RUN_AND_BUILD_TIME
+      value: ${db.DATABASE_URL}
     - key: DATA_DIR
       scope: RUN_TIME
       value: /workspace/data
+  databases:
+  - name: db
+    engine: PG
+    production: false
+    version: "16"

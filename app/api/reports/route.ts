@@ -3,7 +3,7 @@ import { getSetting, getDb } from "@/lib/db";
 import type { Report } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
-  const apiKey = getSetting("api_key");
+  const apiKey = await getSetting("api_key");
   if (!apiKey) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -14,36 +14,35 @@ export async function GET(req: NextRequest) {
   const eventType = searchParams.get("type");
   const dropletId = searchParams.get("dropletId");
 
-  const db = getDb();
+  const db = await getDb();
 
-  let query = "SELECT * FROM reports";
   const conditions: string[] = [];
-  const binds: (string | number)[] = [];
+  const filterParams: unknown[] = [];
 
   if (eventType) {
-    conditions.push("event_type = ?");
-    binds.push(eventType);
+    filterParams.push(eventType);
+    conditions.push(`event_type = $${filterParams.length}`);
   }
   if (dropletId) {
-    conditions.push("droplet_id = ?");
-    binds.push(parseInt(dropletId));
+    filterParams.push(parseInt(dropletId));
+    conditions.push(`droplet_id = $${filterParams.length}`);
   }
 
-  if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
-  }
+  const whereClause =
+    conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "";
 
-  query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?";
-  binds.push(limit, offset);
+  // Main query: add ORDER BY + LIMIT + OFFSET
+  const pageParams = [...filterParams, limit, offset];
+  const mainQuery = `SELECT * FROM reports${whereClause} ORDER BY timestamp DESC LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}`;
 
-  const reports = db.prepare(query).all(...binds) as Report[];
-  const total = (
-    db
-      .prepare(
-        `SELECT COUNT(*) as count FROM reports${conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : ""}`
-      )
-      .get(...binds.slice(0, -2)) as { count: number }
-  ).count;
+  const reports = (await db.all(mainQuery, pageParams)) as Report[];
+
+  // Count query (reuse same filter params)
+  const countRow = await db.get(
+    `SELECT COUNT(*) as count FROM reports${whereClause}`,
+    filterParams
+  );
+  const total = Number(countRow?.count ?? 0);
 
   return NextResponse.json({ reports, total, limit, offset });
 }

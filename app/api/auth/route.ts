@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSetting, setSetting } from "@/lib/db";
+import { getDb, getSetting, setSetting } from "@/lib/db";
 import { validateApiKey } from "@/lib/digitalocean";
 import { getScheduler } from "@/lib/scheduler";
 
 export async function GET() {
-  const key = getSetting("api_key");
+  const key = await getSetting("api_key");
   return NextResponse.json({ authenticated: !!key });
 }
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  setSetting("api_key", apiKey);
+  await setSetting("api_key", apiKey);
 
   // Ensure scheduler is initialized after auth
   getScheduler();
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const { getDb } = await import("@/lib/db");
-  getDb().prepare("DELETE FROM settings WHERE key = 'api_key'").run();
+  const db = await getDb();
+  await db.run("DELETE FROM settings WHERE key = $1", ["api_key"]);
   return NextResponse.json({ success: true });
 }

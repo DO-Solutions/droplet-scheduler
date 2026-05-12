@@ -16,7 +16,7 @@
 | **Cleanup** | Auto-deletes the snapshot 2 hours after a successful recreation |
 | **Reporting** | Every event is logged; optional email report via SMTP after each cycle |
 
-Schedules are stored in SQLite and **survive server restarts** — no jobs are lost if the app is restarted.
+Schedules are stored in SQLite (local) or PostgreSQL (production) and **survive server restarts** — no jobs are lost if the app is restarted.
 
 ---
 
@@ -30,7 +30,7 @@ Click the button above, or:
 4. App Platform will auto-detect the Next.js app — keep all defaults
 5. Click **Deploy**
 
-> **Persistence note:** The free/basic tier uses ephemeral storage. Your schedules and API key reset on each redeploy. To persist data across deployments, add a **Volume** mount at `/workspace/data` in the App Platform settings (Resources → Add Volume).
+> **Persistence note:** The included `.do/app.yaml` provisions a dev-tier PostgreSQL 16 managed database (`db`) and automatically injects `DATABASE_URL` into the app. Schedules, API keys, and reports persist across restarts and redeployments. No volume mount is needed.
 
 ---
 
@@ -51,12 +51,22 @@ Click the button above, or:
 
 **Requirements:** Node.js 18+
 
+### With SQLite (zero setup)
+`DATABASE_URL` is not set → app automatically uses SQLite in `./data/`
+
 ```bash
 git clone https://github.com/aksprat/do-lifecycle-scheduler.git
 cd do-lifecycle-scheduler
-npm install
-npm run dev
+npm install && npm run dev
 # Open http://localhost:3000
+```
+
+### With PostgreSQL (matches production)
+
+```bash
+docker run -d --name pg -e POSTGRES_DB=scheduler -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
+echo 'DATABASE_URL=postgresql://postgres:postgres@localhost:5432/scheduler' > .env.local
+npm install && npm run dev
 ```
 
 Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/account/api/tokens) on the login screen.
@@ -67,7 +77,8 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATA_DIR` | `./data` | Directory where `scheduler.db` is stored |
+| `DATABASE_URL` | _(unset)_ | PostgreSQL connection string. When set, app uses PostgreSQL; otherwise falls back to SQLite |
+| `DATA_DIR` | `./data` | Directory where `scheduler.db` is stored (SQLite mode only) |
 | `PORT` | `3000` | Port the server listens on |
 | `NODE_ENV` | `development` | Set to `production` in deployment |
 
@@ -78,7 +89,7 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 | Layer | Technology |
 |-------|-----------|
 | Framework | [Next.js 14](https://nextjs.org) (App Router) |
-| Database | [SQLite](https://sqlite.org) via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) |
+| Database | [SQLite](https://sqlite.org) (local dev) / [PostgreSQL](https://www.postgresql.org) (production) via dual adapter |
 | Scheduler | [node-cron](https://github.com/node-cron/node-cron) (persisted in SQLite) |
 | DO API client | [axios](https://axios-http.com) with retry/backoff |
 | Email | [nodemailer](https://nodemailer.com) |

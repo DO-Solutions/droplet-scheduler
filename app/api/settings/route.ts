@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const ALLOWED_KEYS = ["smtp_config", "default_timezone", "notification_email"];
 
 export async function GET() {
-  const apiKey = getSetting("api_key");
+  const apiKey = await getSetting("api_key");
   if (!apiKey) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const settings: Record<string, string | null> = {};
   for (const key of ALLOWED_KEYS) {
-    const raw = getSetting(key);
+    const raw = await getSetting(key);
     // Don't expose SMTP password in the response
     if (key === "smtp_config" && raw) {
       try {
@@ -29,7 +31,7 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const apiKey = getSetting("api_key");
+  const apiKey = await getSetting("api_key");
   if (!apiKey) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -45,18 +47,18 @@ export async function PUT(req: NextRequest) {
       try {
         const incoming = JSON.parse(value);
         if (incoming.pass === "••••••••") {
-          const existing = getSetting("smtp_config");
+          const existing = await getSetting("smtp_config");
           if (existing) {
             const existingParsed = JSON.parse(existing);
             incoming.pass = existingParsed.pass;
           }
         }
-        setSetting(key, JSON.stringify(incoming));
+        await setSetting(key, JSON.stringify(incoming));
       } catch {
-        setSetting(key, value);
+        await setSetting(key, value);
       }
     } else {
-      setSetting(key, value);
+      await setSetting(key, value);
     }
   }
 

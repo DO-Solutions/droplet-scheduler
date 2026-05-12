@@ -6,7 +6,7 @@ export async function sendReportEmail(
   reports: Report[],
   subject: string
 ): Promise<void> {
-  const smtpConfig = getSetting("smtp_config");
+  const smtpConfig = await getSetting("smtp_config");
   if (!smtpConfig) return;
 
   let config: {

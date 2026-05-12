@@ -4,33 +4,38 @@ import { getScheduler } from "@/lib/scheduler";
 import type { Schedule, ScheduleDroplet } from "@/lib/db";
 
 export async function GET() {
-  const apiKey = getSetting("api_key");
+  const apiKey = await getSetting("api_key");
   if (!apiKey) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const db = getDb();
-  const schedules = db.prepare("SELECT * FROM schedules ORDER BY created_at DESC").all() as Schedule[];
+  const db = await getDb();
+  const schedules = (await db.all(
+    "SELECT * FROM schedules ORDER BY created_at DESC"
+  )) as Schedule[];
 
-  const result = schedules.map((s) => {
-    const droplets = db
-      .prepare("SELECT * FROM schedule_droplets WHERE schedule_id = ?")
-      .all(s.id) as ScheduleDroplet[];
+  const result = await Promise.all(
+    schedules.map(async (s) => {
+      const droplets = (await db.all(
+        "SELECT * FROM schedule_droplets WHERE schedule_id = $1",
+        [s.id]
+      )) as ScheduleDroplet[];
 
-    return {
-      ...s,
-      droplets: droplets.map((d) => ({
-        ...d,
-        tags: JSON.parse(d.tags || "[]"),
-      })),
-    };
-  });
+      return {
+        ...s,
+        droplets: droplets.map((d) => ({
+          ...d,
+          tags: JSON.parse(d.tags || "[]"),
+        })),
+      };
+    })
+  );
 
   return NextResponse.json({ schedules: result });
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = getSetting("api_key");
+  const apiKey = await getSetting("api_key");
   if (!apiKey) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
@@ -49,17 +54,19 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!Array.isArray(droplets) || droplets.length === 0) {
-    return NextResponse.json({ error: "At least one droplet required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "At least one droplet required" },
+      { status: 400 }
+    );
   }
 
-  const db = getDb();
+  const db = await getDb();
+  const now = Math.floor(Date.now() / 1000);
 
-  const scheduleId = db
-    .prepare(
-      `INSERT INTO schedules (name, delete_day, delete_hour, delete_minute, recreate_day, recreate_hour, recreate_minute, timezone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+  const scheduleId = await db.insert(
+    `INSERT INTO schedules (name, delete_day, delete_hour, delete_minute, recreate_day, recreate_hour, recreate_minute, timezone, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [
       name || null,
       deleteDay,
       deleteHour,
@@ -67,30 +74,32 @@ export async function POST(req: NextRequest) {
       recreateDay,
       recreateHour,
       recreateMinute,
-      timezone
-    ).lastInsertRowid as number;
-
-  const insertDroplet = db.prepare(
-    `INSERT INTO schedule_droplets (schedule_id, droplet_id, droplet_name, region, size, tags, image_id, image_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      timezone,
+      now,
+      now,
+    ]
   );
 
   for (const d of droplets) {
-    insertDroplet.run(
-      scheduleId,
-      d.id,
-      d.name,
-      d.region,
-      d.size,
-      JSON.stringify(d.tags || []),
-      d.imageId || null,
-      d.imageName || null
+    await db.run(
+      `INSERT INTO schedule_droplets (schedule_id, droplet_id, droplet_name, region, size, tags, image_id, image_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        scheduleId,
+        d.id,
+        d.name,
+        d.region,
+        d.size,
+        JSON.stringify(d.tags || []),
+        d.imageId || null,
+        d.imageName || null,
+      ]
     );
   }
 
-  const schedule = db
-    .prepare("SELECT * FROM schedules WHERE id = ?")
-    .get(scheduleId) as Schedule;
+  const schedule = (await db.get("SELECT * FROM schedules WHERE id = $1", [
+    scheduleId,
+  ])) as Schedule;
 
   getScheduler().registerSchedule(schedule);
 

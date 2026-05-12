@@ -10,10 +10,11 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/auth")
       .then((r) => r.json())
-      .then((data) => setAuthenticated(data.authenticated));
+      .then((data) => setAuthenticated(!!data.authenticated))
+      .catch(() => setAuthenticated(false));
 
     // Initialize scheduler on load
-    fetch("/api/init");
+    fetch("/api/init").catch(() => {});
   }, []);
 
   if (authenticated === null) {
