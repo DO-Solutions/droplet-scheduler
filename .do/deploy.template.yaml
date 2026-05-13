@@ -4,6 +4,7 @@ spec:
   - name: web
     github:
       branch: main
+      repo_clone_url: https://github.com/aksprat/do-lifecycle-scheduler.git
       deploy_on_push: true
     build_command: npm ci && npm run build
     run_command: npm start
