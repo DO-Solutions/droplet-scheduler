@@ -219,7 +219,7 @@ export class DbAdapter {
   private async initSqlite(fallbackReason?: string): Promise<void> {
     const Database = (await import("better-sqlite3")).default;
     const defaultDir =
-      process.env.NODE_ENV === "production"
+      process.env.NODE_ENV !== "development"
         ? path.join("/tmp", "do-lifecycle-scheduler")
         : path.join(process.cwd(), "data");
     const DB_DIR = process.env.DATA_DIR ?? defaultDir;
