@@ -177,30 +177,55 @@ export class DbAdapter {
 
   private async _init(): Promise<void> {
     if (this.usePg) {
-      const { Pool } = await import("pg");
-      this.pgPool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: { rejectUnauthorized: false },
-      });
-      // Run each statement individually to tolerate "already exists" errors gracefully
-      const statements = PG_SCHEMA.split(";")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      for (const stmt of statements) {
-        await this.pgPool.query(stmt);
+      try {
+        const { Pool } = await import("pg");
+        this.pgPool = new Pool({
+          connectionString: process.env.DATABASE_URL,
+          ssl: { rejectUnauthorized: false },
+        });
+        // Run each statement individually to tolerate "already exists" errors gracefully
+        const statements = PG_SCHEMA.split(";")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        for (const stmt of statements) {
+          await this.pgPool.query(stmt);
+        }
+      } catch (err) {
+        console.error(
+          "[DB] PostgreSQL initialization failed; falling back to SQLite:",
+          err
+        );
+        if (this.pgPool) {
+          try {
+            await this.pgPool.end();
+          } catch {
+            // ignore pool close errors during fallback
+          }
+          this.pgPool = null;
+        }
+        this.usePg = false;
+        await this.initSqlite();
       }
     } else {
-      const Database = (await import("better-sqlite3")).default;
-      const DB_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-      const DB_PATH = path.join(DB_DIR, "scheduler.db");
-      if (!fs.existsSync(DB_DIR)) {
-        fs.mkdirSync(DB_DIR, { recursive: true });
-      }
-      this.sqliteDb = new Database(DB_PATH);
-      this.sqliteDb.pragma("journal_mode = WAL");
-      this.sqliteDb.pragma("foreign_keys = ON");
-      this.sqliteDb.exec(SQLITE_SCHEMA);
+      await this.initSqlite();
     }
+  }
+
+  private async initSqlite(): Promise<void> {
+    const Database = (await import("better-sqlite3")).default;
+    const defaultDir =
+      process.env.NODE_ENV === "production"
+        ? path.join("/tmp", "do-lifecycle-scheduler")
+        : path.join(process.cwd(), "data");
+    const DB_DIR = process.env.DATA_DIR ?? defaultDir;
+    const DB_PATH = path.join(DB_DIR, "scheduler.db");
+    if (!fs.existsSync(DB_DIR)) {
+      fs.mkdirSync(DB_DIR, { recursive: true });
+    }
+    this.sqliteDb = new Database(DB_PATH);
+    this.sqliteDb.pragma("journal_mode = WAL");
+    this.sqliteDb.pragma("foreign_keys = ON");
+    this.sqliteDb.exec(SQLITE_SCHEMA);
   }
 
   /** Convert $1,$2,... placeholders to ? for SQLite. */
