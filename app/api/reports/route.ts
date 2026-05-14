@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSetting, getDb } from "@/lib/db";
 import type { Report } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const apiKey = await getSetting("api_key");
   if (!apiKey) {

@@ -3,6 +3,8 @@ import { getSetting, getDb } from "@/lib/db";
 import { getScheduler } from "@/lib/scheduler";
 import type { Schedule, ScheduleDroplet } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const apiKey = await getSetting("api_key");
   if (!apiKey) {

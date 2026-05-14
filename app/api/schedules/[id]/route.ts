@@ -3,6 +3,8 @@ import { getSetting, getDb } from "@/lib/db";
 import { getScheduler } from "@/lib/scheduler";
 import type { Schedule } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }

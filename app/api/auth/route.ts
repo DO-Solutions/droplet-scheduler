@@ -3,6 +3,8 @@ import { getDb, getSetting, setSetting } from "@/lib/db";
 import { validateApiKey } from "@/lib/digitalocean";
 import { getScheduler } from "@/lib/scheduler";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const key = await getSetting("api_key");
   return NextResponse.json({ authenticated: !!key });
