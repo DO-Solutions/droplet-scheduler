@@ -198,8 +198,11 @@ export class DbAdapter {
         if (this.pgPool) {
           try {
             await this.pgPool.end();
-          } catch {
-            // ignore pool close errors during fallback
+          } catch (closeErr) {
+            console.error(
+              "[DB] Error while closing PostgreSQL pool during fallback:",
+              closeErr
+            );
           }
           this.pgPool = null;
         }
