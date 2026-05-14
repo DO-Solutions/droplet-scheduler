@@ -76,7 +76,7 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | _(unset)_ | PostgreSQL connection string. When set, app uses PostgreSQL; otherwise falls back to SQLite |
-| `DATA_DIR` | `./data` (local) / `/tmp/do-lifecycle-scheduler` (production) | Directory where `scheduler.db` is stored (SQLite mode only) |
+| `DATA_DIR` | `./data` (local) / `/tmp/do-lifecycle-scheduler` (production) | Directory where `scheduler.db` is stored (SQLite mode only; `/tmp` is ephemeral in App Platform) |
 | `PORT` | `3000` | Port the server listens on |
 | `NODE_ENV` | `development` | Set to `production` in deployment |
 

@@ -207,14 +207,16 @@ export class DbAdapter {
           this.pgPool = null;
         }
         this.usePg = false;
-        await this.initSqlite();
+        await this.initSqlite(
+          "PostgreSQL init failed while DATABASE_URL was set; using SQLite fallback"
+        );
       }
     } else {
       await this.initSqlite();
     }
   }
 
-  private async initSqlite(): Promise<void> {
+  private async initSqlite(fallbackReason?: string): Promise<void> {
     const Database = (await import("better-sqlite3")).default;
     const defaultDir =
       process.env.NODE_ENV === "production"
@@ -229,6 +231,9 @@ export class DbAdapter {
     this.sqliteDb.pragma("journal_mode = WAL");
     this.sqliteDb.pragma("foreign_keys = ON");
     this.sqliteDb.exec(SQLITE_SCHEMA);
+    if (fallbackReason) {
+      console.warn(`[DB] ${fallbackReason}. SQLite path: ${DB_PATH}`);
+    }
   }
 
   /** Convert $1,$2,... placeholders to ? for SQLite. */
