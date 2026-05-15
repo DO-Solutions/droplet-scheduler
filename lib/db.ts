@@ -155,9 +155,7 @@ export class DbAdapter {
           );
         }
       }
-      ssl = process.env.DATABASE_CA_CERT
-        ? { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT }
-        : { rejectUnauthorized: true };
+      ssl = ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
     }
     this.pgPool = new Pool({
       connectionString: process.env.DATABASE_URL,
