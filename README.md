@@ -14,7 +14,7 @@
 | **Cleanup** | Auto-deletes the snapshot 2 hours after a successful recreation |
 | **Reporting** | Every event is logged; optional email report via SMTP after each cycle |
 
-Schedules are stored in SQLite (local) or PostgreSQL (production) and **survive server restarts** — no jobs are lost if the app is restarted.
+Schedules are stored in PostgreSQL and **survive server restarts** — no jobs are lost if the app is restarted.
 
 ---
 
@@ -38,7 +38,7 @@ Click the button above, or:
 - **Droplet listing** — Fetches all Droplets with name, IP, region, size, status, and tags
 - **Tag filter** — Filter the Droplet list by tag; "Select All" respects the active filter
 - **Weekly schedules** — Pick day-of-week + time for deletion and recreation; supports any IANA timezone
-- **Persistent jobs** — Schedules survive app restarts (SQLite-backed, reloaded on boot)
+- **Persistent jobs** — Schedules survive app restarts (PostgreSQL-backed, reloaded on boot)
 - **Retry & backoff** — All DigitalOcean API calls retry on 429 / 5xx with exponential backoff
 - **Reports log** — Paginated event log with filtering by event type
 - **Email notifications** — Optional SMTP config to receive an HTML report after each recreation cycle
@@ -49,17 +49,7 @@ Click the button above, or:
 
 **Requirements:** Node.js 18+
 
-### With SQLite (zero setup)
-`DATABASE_URL` is not set → app automatically uses SQLite in `./data/`
-
-```bash
-git clone https://github.com/aksprat/do-lifecycle-scheduler.git
-cd do-lifecycle-scheduler
-npm install && npm run dev
-# Open http://localhost:3000
-```
-
-### With PostgreSQL (matches production)
+### With PostgreSQL (local + production)
 
 ```bash
 docker run -d --name pg -e POSTGRES_DB=scheduler -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
@@ -75,10 +65,16 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | _(unset)_ | PostgreSQL connection string. When set, app uses PostgreSQL; otherwise falls back to SQLite |
-| `DATA_DIR` | `./data` (`NODE_ENV=development`) / `/tmp/do-lifecycle-scheduler` (`NODE_ENV!=development`) | Directory where `scheduler.db` is stored (SQLite mode only; `/tmp` is ephemeral in App Platform) |
+| `DATABASE_URL` | _(required)_ | Managed PostgreSQL connection string used by the app for all persistent data |
+| `DATABASE_CA_CERT` | _(unset)_ | Optional CA certificate content (PEM) for strict TLS verification when required by your PostgreSQL provider |
 | `PORT` | `3000` | Port the server listens on |
 | `NODE_ENV` | `development` | Set to `production` in deployment |
+
+### App Platform recommendation
+
+- Create/attach a **Managed PostgreSQL** database to your App Platform app.
+- Set `DATABASE_URL` as an App Platform environment variable from the managed database connection.
+- If your setup requires custom certificate validation, also set `DATABASE_CA_CERT` in App Platform.
 
 ---
 
@@ -87,8 +83,8 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 | Layer | Technology |
 |-------|-----------|
 | Framework | [Next.js 14](https://nextjs.org) (App Router) |
-| Database | [SQLite](https://sqlite.org) (local dev) / [PostgreSQL](https://www.postgresql.org) (production) via dual adapter |
-| Scheduler | [node-cron](https://github.com/node-cron/node-cron) (persisted in SQLite) |
+| Database | [PostgreSQL](https://www.postgresql.org) |
+| Scheduler | [node-cron](https://github.com/node-cron/node-cron) (persisted in PostgreSQL) |
 | DO API client | [axios](https://axios-http.com) with retry/backoff |
 | Email | [nodemailer](https://nodemailer.com) |
 | Styling | [Tailwind CSS](https://tailwindcss.com) |
@@ -107,13 +103,13 @@ app/
 │   ├── settings/    # SMTP + timezone config
 │   └── init/        # Boot-time scheduler reload
 lib/
-├── db.ts            # SQLite schema + typed helpers
+├── db.ts            # PostgreSQL schema + typed helpers
 ├── digitalocean.ts  # DO API client (snapshot, delete, recreate, poll)
 ├── scheduler.ts     # LifecycleScheduler singleton + workflows
 └── mailer.ts        # SMTP report emails
 ```
 
-The scheduler runs as a **global singleton** inside the Next.js server process. On startup it loads all active schedules from SQLite and re-registers their cron jobs — so workflows continue running even after the app restarts.
+The scheduler runs as a **global singleton** inside the Next.js server process. On startup it loads all active schedules from PostgreSQL and re-registers their cron jobs — so workflows continue running even after the app restarts.
 
 ---
 
