@@ -54,6 +54,7 @@ Click the button above, or:
 ```bash
 docker run -d --name pg -e POSTGRES_DB=scheduler -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
 echo 'DATABASE_URL=postgresql://postgres:postgres@localhost:5432/scheduler' > .env.local
+echo 'DATABASE_SSL_MODE=disable' >> .env.local
 npm install && npm run dev
 ```
 
@@ -66,6 +67,7 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | _(required)_ | Managed PostgreSQL connection string used by the app for all persistent data |
+| `DATABASE_SSL_MODE` | `verify-full` | PostgreSQL TLS mode. Use `verify-full` for managed production databases; use `disable` only for local non-TLS PostgreSQL |
 | `DATABASE_CA_CERT` | _(unset)_ | Optional CA certificate content (PEM) for strict TLS verification when required by your PostgreSQL provider |
 | `PORT` | `3000` | Port the server listens on |
 | `NODE_ENV` | `development` | Set to `production` in deployment |
@@ -74,7 +76,8 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 
 - Create/attach a **Managed PostgreSQL** database to your App Platform app.
 - Set `DATABASE_URL` as an App Platform environment variable from the managed database connection.
-- If your setup requires custom certificate validation, also set `DATABASE_CA_CERT` in App Platform.
+- Keep `DATABASE_SSL_MODE=verify-full` in App Platform.
+- If your setup requires a custom CA chain, also set `DATABASE_CA_CERT` in App Platform.
 
 ---
 

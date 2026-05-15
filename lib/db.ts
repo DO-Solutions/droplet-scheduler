@@ -132,9 +132,23 @@ export class DbAdapter {
     }
 
     const { Pool } = await import("pg");
-    const ssl = process.env.DATABASE_CA_CERT
-      ? { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT }
-      : { rejectUnauthorized: false };
+    const sslMode = process.env.DATABASE_SSL_MODE ?? "verify-full";
+    if (!["disable", "require", "verify-ca", "verify-full"].includes(sslMode)) {
+      throw new Error(
+        "DATABASE_SSL_MODE must be one of: disable, require, verify-ca, verify-full"
+      );
+    }
+
+    let ssl: { rejectUnauthorized: boolean; ca?: string } | undefined;
+    if (sslMode === "disable") {
+      ssl = undefined;
+    } else if (sslMode === "require") {
+      ssl = { rejectUnauthorized: false };
+    } else {
+      ssl = process.env.DATABASE_CA_CERT
+        ? { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT }
+        : { rejectUnauthorized: true };
+    }
     this.pgPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl,
