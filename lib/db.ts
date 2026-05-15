@@ -1,6 +1,3 @@
-import path from "path";
-import fs from "fs";
-
 // ---------------------------------------------------------------------------
 // Type exports (unchanged public API)
 // ---------------------------------------------------------------------------
@@ -69,48 +66,6 @@ export type Report = {
 // Schema strings (one per dialect)
 // ---------------------------------------------------------------------------
 
-const SQLITE_SCHEMA = `
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS droplet_cache (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, ip TEXT, region TEXT NOT NULL,
-  size TEXT NOT NULL, status TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]',
-  image_id INTEGER, image_name TEXT, cached_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS schedules (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT,
-  delete_day INTEGER NOT NULL, delete_hour INTEGER NOT NULL, delete_minute INTEGER NOT NULL,
-  recreate_day INTEGER NOT NULL, recreate_hour INTEGER NOT NULL, recreate_minute INTEGER NOT NULL,
-  timezone TEXT NOT NULL DEFAULT 'UTC', active INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS schedule_droplets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-  droplet_id INTEGER NOT NULL, droplet_name TEXT NOT NULL, region TEXT NOT NULL, size TEXT NOT NULL,
-  tags TEXT NOT NULL DEFAULT '[]', image_id INTEGER, image_name TEXT,
-  current_snapshot_id TEXT, last_deleted_at INTEGER, last_recreated_at INTEGER,
-  state TEXT NOT NULL DEFAULT 'idle'
-);
-CREATE TABLE IF NOT EXISTS snapshots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, droplet_id INTEGER NOT NULL, droplet_name TEXT NOT NULL,
-  snapshot_do_id TEXT NOT NULL UNIQUE, snapshot_name TEXT NOT NULL, region TEXT NOT NULL,
-  size TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0,
-  delete_after INTEGER, deleted INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS reports (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
-  droplet_id INTEGER NOT NULL, droplet_name TEXT NOT NULL,
-  snapshot_do_id TEXT, snapshot_name TEXT, schedule_id INTEGER,
-  status TEXT NOT NULL, details TEXT, health_check_result TEXT,
-  timestamp INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_reports_ts ON reports(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_reports_d ON reports(droplet_id);
-CREATE INDEX IF NOT EXISTS idx_snaps_d ON snapshots(droplet_id);
-CREATE INDEX IF NOT EXISTS idx_sd_sched ON schedule_droplets(schedule_id);
-`;
-
 const PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at BIGINT NOT NULL DEFAULT 0
@@ -154,18 +109,12 @@ CREATE INDEX IF NOT EXISTS idx_sd_sched ON schedule_droplets(schedule_id);
 `;
 
 // ---------------------------------------------------------------------------
-// DbAdapter — uniform async interface over SQLite or PostgreSQL
+// DbAdapter — PostgreSQL-only async interface
 // ---------------------------------------------------------------------------
 
 export class DbAdapter {
-  private usePg: boolean;
   private pgPool: import("pg").Pool | null = null;
-  private sqliteDb: import("better-sqlite3").Database | null = null;
   private initPromise: Promise<void> | null = null;
-
-  constructor() {
-    this.usePg = !!process.env.DATABASE_URL;
-  }
 
   /** Ensure schema is created exactly once (lazy, async). */
   private ensureInit(): Promise<void> {
@@ -176,115 +125,83 @@ export class DbAdapter {
   }
 
   private async _init(): Promise<void> {
-    if (this.usePg) {
-      try {
-        const { Pool } = await import("pg");
-        this.pgPool = new Pool({
-          connectionString: process.env.DATABASE_URL,
-          ssl: { rejectUnauthorized: false },
-        });
-        // Run each statement individually to tolerate "already exists" errors gracefully
-        const statements = PG_SCHEMA.split(";")
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        for (const stmt of statements) {
-          await this.pgPool.query(stmt);
-        }
-      } catch (err) {
-        console.error(
-          "[DB] PostgreSQL initialization failed; falling back to SQLite:",
-          err
-        );
-        if (this.pgPool) {
-          try {
-            await this.pgPool.end();
-          } catch (closeErr) {
-            console.error(
-              "[DB] Error while closing PostgreSQL pool during fallback:",
-              closeErr
-            );
-          }
-          this.pgPool = null;
-        }
-        this.usePg = false;
-        await this.initSqlite(
-          "PostgreSQL init failed while DATABASE_URL was set; using SQLite fallback"
-        );
-      }
+    if (!process.env.DATABASE_URL) {
+      throw new Error(
+        "DATABASE_URL is required. Configure your Managed PostgreSQL connection string."
+      );
+    }
+
+    const { Pool } = await import("pg");
+    const sslMode = process.env.DATABASE_SSL_MODE ?? "verify-full";
+    if (!["disable", "require", "verify-ca", "verify-full"].includes(sslMode)) {
+      throw new Error(
+        "DATABASE_SSL_MODE must be one of: disable, require, verify-ca, verify-full (default: verify-full)"
+      );
+    }
+
+    let ssl: { rejectUnauthorized: boolean; ca?: string } | undefined;
+    if (sslMode === "disable") {
+      ssl = undefined;
+    } else if (sslMode === "require") {
+      ssl = { rejectUnauthorized: false };
     } else {
-      await this.initSqlite();
+      const ca = process.env.DATABASE_CA_CERT;
+      if (ca) {
+        const hasPemHeader = ca.includes("-----BEGIN CERTIFICATE-----");
+        const hasPemFooter = ca.includes("-----END CERTIFICATE-----");
+        if (!hasPemHeader || !hasPemFooter) {
+          throw new Error(
+            "DATABASE_CA_CERT must be a valid PEM certificate when provided."
+          );
+        }
+      }
+      ssl = ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+    }
+    this.pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl,
+    });
+
+    const statements = PG_SCHEMA.split(";")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    for (const stmt of statements) {
+      await this.pgPool.query(stmt);
     }
   }
 
-  private async initSqlite(fallbackReason?: string): Promise<void> {
-    const Database = (await import("better-sqlite3")).default;
-    const defaultDir =
-      process.env.NODE_ENV !== "development"
-        ? path.join("/tmp", "do-lifecycle-scheduler")
-        : path.join(process.cwd(), "data");
-    const DB_DIR = process.env.DATA_DIR ?? defaultDir;
-    const DB_PATH = path.join(DB_DIR, "scheduler.db");
-    if (!fs.existsSync(DB_DIR)) {
-      fs.mkdirSync(DB_DIR, { recursive: true });
+  private getPool(): import("pg").Pool {
+    if (!this.pgPool) {
+      throw new Error("Database pool is not initialized");
     }
-    this.sqliteDb = new Database(DB_PATH);
-    this.sqliteDb.pragma("journal_mode = WAL");
-    this.sqliteDb.pragma("foreign_keys = ON");
-    this.sqliteDb.exec(SQLITE_SCHEMA);
-    if (fallbackReason) {
-      console.warn(`[DB] ${fallbackReason}. SQLite path: ${DB_PATH}`);
-    }
-  }
-
-  /** Convert $1,$2,... placeholders to ? for SQLite. */
-  private toSqlite(sql: string): string {
-    return sql.replace(/\$\d+/g, "?");
+    return this.pgPool;
   }
 
   async all(sql: string, params?: unknown[]): Promise<Record<string, unknown>[]> {
     await this.ensureInit();
-    if (this.usePg) {
-      const res = await this.pgPool!.query(sql, params);
-      return res.rows;
-    } else {
-      return this.sqliteDb!.prepare(this.toSqlite(sql)).all(...(params ?? [])) as Record<string, unknown>[];
-    }
+    const res = await this.getPool().query(sql, params);
+    return res.rows;
   }
 
   async get(sql: string, params?: unknown[]): Promise<Record<string, unknown> | undefined> {
     await this.ensureInit();
-    if (this.usePg) {
-      const res = await this.pgPool!.query(sql, params);
-      return res.rows[0];
-    } else {
-      return this.sqliteDb!.prepare(this.toSqlite(sql)).get(...(params ?? [])) as Record<string, unknown> | undefined;
-    }
+    const res = await this.getPool().query(sql, params);
+    return res.rows[0];
   }
 
   async run(sql: string, params?: unknown[]): Promise<void> {
     await this.ensureInit();
-    if (this.usePg) {
-      await this.pgPool!.query(sql, params);
-    } else {
-      this.sqliteDb!.prepare(this.toSqlite(sql)).run(...(params ?? []));
-    }
+    await this.getPool().query(sql, params);
   }
 
   /** Run an INSERT and return the inserted row's id. */
   async insert(sql: string, params?: unknown[]): Promise<number> {
     await this.ensureInit();
-    if (this.usePg) {
-      const returning = sql.trimEnd().endsWith("RETURNING id")
-        ? sql
-        : sql + " RETURNING id";
-      const res = await this.pgPool!.query(returning, params);
-      return Number(res.rows[0].id);
-    } else {
-      const result = this.sqliteDb!
-        .prepare(this.toSqlite(sql))
-        .run(...(params ?? []));
-      return result.lastInsertRowid as number;
-    }
+    const returning = sql.trimEnd().endsWith("RETURNING id")
+      ? sql
+      : sql + " RETURNING id";
+    const res = await this.getPool().query(returning, params);
+    return Number(res.rows[0].id);
   }
 }
 
