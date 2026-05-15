@@ -135,7 +135,7 @@ export class DbAdapter {
     const sslMode = process.env.DATABASE_SSL_MODE ?? "verify-full";
     if (!["disable", "require", "verify-ca", "verify-full"].includes(sslMode)) {
       throw new Error(
-        "DATABASE_SSL_MODE must be one of: disable, require, verify-ca, verify-full"
+        "DATABASE_SSL_MODE must be one of: disable, require, verify-ca, verify-full (default: verify-full)"
       );
     }
 
@@ -145,6 +145,16 @@ export class DbAdapter {
     } else if (sslMode === "require") {
       ssl = { rejectUnauthorized: false };
     } else {
+      const ca = process.env.DATABASE_CA_CERT;
+      if (ca) {
+        const hasPemHeader = ca.includes("-----BEGIN CERTIFICATE-----");
+        const hasPemFooter = ca.includes("-----END CERTIFICATE-----");
+        if (!hasPemHeader || !hasPemFooter) {
+          throw new Error(
+            "DATABASE_CA_CERT must be a valid PEM certificate when provided."
+          );
+        }
+      }
       ssl = process.env.DATABASE_CA_CERT
         ? { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT }
         : { rejectUnauthorized: true };
