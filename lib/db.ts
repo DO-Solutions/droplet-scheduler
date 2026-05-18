@@ -146,6 +146,7 @@ export class DbAdapter {
       return url.toString();
     } catch {
       // Keep original value if parsing fails (avoid logging potentially sensitive DSN content).
+      console.warn("Failed to parse DATABASE_URL for SSL parameter stripping.");
       return connectionString;
     }
   }
