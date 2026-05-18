@@ -45,6 +45,9 @@ export type Snapshot = {
   size: string;
   created_at: number;
   delete_after: number | null;
+  delete_attempts: number;
+  last_delete_error: string | null;
+  last_delete_attempt_at: number | null;
   deleted: number;
 };
 
@@ -93,7 +96,11 @@ CREATE TABLE IF NOT EXISTS snapshots (
   id BIGSERIAL PRIMARY KEY, droplet_id BIGINT NOT NULL, droplet_name TEXT NOT NULL,
   snapshot_do_id TEXT NOT NULL UNIQUE, snapshot_name TEXT NOT NULL, region TEXT NOT NULL,
   size TEXT NOT NULL, created_at BIGINT NOT NULL DEFAULT 0,
-  delete_after BIGINT, deleted INTEGER NOT NULL DEFAULT 0
+  delete_after BIGINT,
+  delete_attempts INTEGER NOT NULL DEFAULT 0,
+  last_delete_error TEXT,
+  last_delete_attempt_at BIGINT,
+  deleted INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS reports (
   id BIGSERIAL PRIMARY KEY, event_type TEXT NOT NULL,
@@ -105,7 +112,11 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE INDEX IF NOT EXISTS idx_reports_ts ON reports(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_d ON reports(droplet_id);
 CREATE INDEX IF NOT EXISTS idx_snaps_d ON snapshots(droplet_id);
+CREATE INDEX IF NOT EXISTS idx_snaps_cleanup ON snapshots(deleted, delete_after);
 CREATE INDEX IF NOT EXISTS idx_sd_sched ON schedule_droplets(schedule_id);
+ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS delete_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS last_delete_error TEXT;
+ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS last_delete_attempt_at BIGINT;
 `;
 
 // ---------------------------------------------------------------------------
