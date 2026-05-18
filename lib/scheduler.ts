@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { exec } from "child_process";
 import { promisify } from "util";
+import net from "node:net";
 import { getDb, getSetting, addReport } from "./db";
 import type { Schedule, ScheduleDroplet, Snapshot } from "./db";
 import {
@@ -17,6 +18,9 @@ import { sendReportEmail } from "./mailer";
 import type { Report } from "./db";
 
 const execAsync = promisify(exec);
+const SNAPSHOT_DELETE_GRACE_SECONDS = 3 * 60 * 60;
+const SNAPSHOT_DELETE_MAX_ATTEMPTS = 8;
+const SNAPSHOT_DELETE_BASE_BACKOFF_SECONDS = 5 * 60;
 
 // Day mapping: 0=Sunday, 1=Monday, ..., 6=Saturday
 // node-cron: 0=Sunday, 1=Monday, ..., 6=Saturday
@@ -351,6 +355,12 @@ export class LifecycleScheduler {
 
       // Step 2: Recreate droplet from snapshot
       const tags = JSON.parse(sd.tags || "[]") as string[];
+      const recreateSshKeys = await this.getConfiguredSshKeys();
+      if (recreateSshKeys.length === 0) {
+        throw new Error(
+          "No SSH keys configured for recreation. Configure SSH key IDs/fingerprints in Settings."
+        );
+      }
       console.log(
         `[Scheduler] Creating droplet ${sd.droplet_name} from snapshot ${snapshot.snapshot_do_id}`
       );
@@ -361,7 +371,8 @@ export class LifecycleScheduler {
         snapshot.region,
         snapshot.size,
         snapshot.snapshot_do_id,
-        tags
+        tags,
+        recreateSshKeys
       );
 
       // Step 3: Wait for active
@@ -388,8 +399,6 @@ export class LifecycleScheduler {
         healthResult = await this.performHealthCheck(publicIp);
       }
 
-      const success = healthResult === "pass";
-
       // Step 6: Log report
       const reportId = await addReport({
         event_type: "recreation",
@@ -398,31 +407,27 @@ export class LifecycleScheduler {
         snapshot_do_id: snapshot.snapshot_do_id,
         snapshot_name: snapshot.snapshot_name,
         schedule_id: scheduleId,
-        status: success ? "success" : "failed",
-        details: `Recreated from snapshot ${snapshot.snapshot_name}, IP: ${publicIp ?? "unknown"}`,
+        status: "success",
+        details: `Recreated from snapshot ${snapshot.snapshot_name}, IP: ${publicIp ?? "unknown"}, health: ${healthResult}`,
         health_check_result: healthResult,
       });
 
-      // Step 7: Schedule snapshot deletion in 2 hours if success
-      if (success) {
-        const deleteAfter = Math.floor(Date.now() / 1000) + 2 * 60 * 60;
-        await db.run(
-          "UPDATE snapshots SET delete_after = $1 WHERE id = $2",
-          [deleteAfter, snapshot.id]
-        );
+      // Step 7: Schedule snapshot deletion after grace period, independent of health probe
+      const deleteAfter =
+        Math.floor(Date.now() / 1000) + SNAPSHOT_DELETE_GRACE_SECONDS;
+      await db.run(
+        `UPDATE snapshots
+         SET delete_after = $1,
+             delete_attempts = 0,
+             last_delete_error = NULL,
+             last_delete_attempt_at = NULL
+         WHERE id = $2`,
+        [deleteAfter, snapshot.id]
+      );
 
-        console.log(
-          `[Scheduler] Snapshot ${snapshot.snapshot_do_id} scheduled for deletion at ${new Date(deleteAfter * 1000).toISOString()}`
-        );
-      } else {
-        // Flag snapshot for manual review
-        await db.run("UPDATE snapshots SET delete_after = NULL WHERE id = $1", [
-          snapshot.id,
-        ]);
-        console.warn(
-          `[Scheduler] Health check failed for ${sd.droplet_name}, snapshot retained for manual review`
-        );
-      }
+      console.log(
+        `[Scheduler] Snapshot ${snapshot.snapshot_do_id} scheduled for deletion at ${new Date(deleteAfter * 1000).toISOString()}`
+      );
 
       const report = (await db.get(
         "SELECT * FROM reports WHERE id = $1",
@@ -430,7 +435,7 @@ export class LifecycleScheduler {
       )) as Report;
 
       console.log(
-        `[Scheduler] Recreation ${success ? "succeeded" : "failed"} for ${sd.droplet_name}, health=${healthResult}`
+        `[Scheduler] Recreation succeeded for ${sd.droplet_name}, health=${healthResult}`
       );
 
       return report;
@@ -462,6 +467,13 @@ export class LifecycleScheduler {
   }
 
   private async performHealthCheck(ip: string): Promise<string> {
+    try {
+      const sshReady = await this.tcpPortCheck(ip, 22);
+      if (sshReady) return "pass";
+    } catch {
+      // keep probing
+    }
+
     // Try ICMP ping first, then HTTP
     try {
       const pingResult = await this.pingHost(ip);
@@ -480,6 +492,31 @@ export class LifecycleScheduler {
     return "fail";
   }
 
+  private async getConfiguredSshKeys(): Promise<Array<string | number>> {
+    const raw = await getSetting("recreate_ssh_keys");
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((entry) =>
+            typeof entry === "number" || typeof entry === "string" ? entry : null
+          )
+          .filter((entry): entry is string | number => entry !== null);
+      }
+    } catch {
+      const split = raw
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      return split.map((part) => {
+        const numeric = Number(part);
+        return Number.isInteger(numeric) ? numeric : part;
+      });
+    }
+    return [];
+  }
+
   private async pingHost(ip: string): Promise<boolean> {
     try {
       // -c 3: send 3 packets, -W 5: 5 second timeout
@@ -488,6 +525,25 @@ export class LifecycleScheduler {
     } catch {
       return false;
     }
+  }
+
+  private async tcpPortCheck(ip: string, port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let settled = false;
+      const finalize = (result: boolean) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(result);
+      };
+
+      socket.setTimeout(5000);
+      socket.once("connect", () => finalize(true));
+      socket.once("timeout", () => finalize(false));
+      socket.once("error", () => finalize(false));
+      socket.connect(port, ip);
+    });
   }
 
   private async httpCheck(ip: string): Promise<boolean> {
@@ -540,9 +596,16 @@ export class LifecycleScheduler {
     for (const snap of pending) {
       try {
         await deleteSnapshot(apiKey, snap.snapshot_do_id);
-        await db.run("UPDATE snapshots SET deleted = 1 WHERE id = $1", [
-          snap.id,
-        ]);
+        await db.run(
+          `UPDATE snapshots
+           SET deleted = 1,
+               delete_after = NULL,
+               delete_attempts = delete_attempts + 1,
+               last_delete_error = NULL,
+               last_delete_attempt_at = $1
+           WHERE id = $2`,
+          [now, snap.id]
+        );
 
         await addReport({
           event_type: "snapshot_deletion",
@@ -559,6 +622,38 @@ export class LifecycleScheduler {
         console.log(`[Scheduler] Deleted snapshot ${snap.snapshot_do_id}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        const nextAttemptCount = (snap.delete_attempts ?? 0) + 1;
+        const hitMaxAttempts = nextAttemptCount >= SNAPSHOT_DELETE_MAX_ATTEMPTS;
+        const backoffSeconds = Math.min(
+          SNAPSHOT_DELETE_BASE_BACKOFF_SECONDS *
+            Math.pow(2, Math.max(nextAttemptCount - 1, 0)),
+          SNAPSHOT_DELETE_GRACE_SECONDS
+        );
+        const nextDeleteAfter = hitMaxAttempts ? null : now + backoffSeconds;
+        await db.run(
+          `UPDATE snapshots
+           SET delete_attempts = $1,
+               last_delete_error = $2,
+               last_delete_attempt_at = $3,
+               delete_after = $4
+           WHERE id = $5`,
+          [nextAttemptCount, msg, now, nextDeleteAfter, snap.id]
+        );
+
+        if (hitMaxAttempts) {
+          await addReport({
+            event_type: "snapshot_deletion",
+            droplet_id: snap.droplet_id,
+            droplet_name: snap.droplet_name,
+            snapshot_do_id: snap.snapshot_do_id,
+            snapshot_name: snap.snapshot_name,
+            schedule_id: null,
+            status: "failed",
+            details: `Snapshot cleanup halted after ${nextAttemptCount} failed attempts: ${msg}`,
+            health_check_result: null,
+          });
+        }
+
         console.error(
           `[Scheduler] Failed to delete snapshot ${snap.snapshot_do_id}: ${msg}`
         );

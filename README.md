@@ -13,7 +13,7 @@
 | **Deletion** | Creates a snapshot, waits for it to complete, then deletes the Droplet |
 | **Recreation** | Recreates the Droplet from the latest snapshot, waits for it to become active |
 | **Health check** | Sends an ICMP ping + HTTP probe to the new Droplet's public IP |
-| **Cleanup** | Auto-deletes the snapshot 2 hours after a successful recreation |
+| **Cleanup** | Auto-deletes the snapshot 3 hours after recreation with durable retry/backoff |
 | **Reporting** | Every event is logged; optional email report via SMTP after each cycle |
 
 Schedules are stored in PostgreSQL and **survive server restarts** — no jobs are lost if the app is restarted.
@@ -44,6 +44,7 @@ Click the button above, or:
 - **Retry & backoff** — All DigitalOcean API calls retry on 429 / 5xx with exponential backoff
 - **Reports log** — Paginated event log with filtering by event type
 - **Email notifications** — Optional SMTP config to receive an HTML report after each recreation cycle
+- **SSH key recreation** — Recreated Droplets can be forced to attach configured SSH key IDs/fingerprints
 
 ---
 

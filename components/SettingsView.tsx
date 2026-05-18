@@ -11,6 +11,7 @@ export default function SettingsView() {
   const [smtpFrom, setSmtpFrom] = useState("");
   const [smtpTo, setSmtpTo] = useState("");
   const [defaultTimezone, setDefaultTimezone] = useState("UTC");
+  const [recreateSshKeys, setRecreateSshKeys] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -20,6 +21,14 @@ export default function SettingsView() {
       .then((r) => r.json())
       .then(({ settings }) => {
         if (settings.default_timezone) setDefaultTimezone(settings.default_timezone);
+        if (settings.recreate_ssh_keys) {
+          try {
+            const keys = JSON.parse(settings.recreate_ssh_keys);
+            if (Array.isArray(keys)) {
+              setRecreateSshKeys(keys.join(", "));
+            }
+          } catch {}
+        }
         if (settings.smtp_config) {
           try {
             const cfg = JSON.parse(settings.smtp_config);
@@ -43,6 +52,12 @@ export default function SettingsView() {
 
     const payload: Record<string, string> = {
       default_timezone: defaultTimezone,
+      recreate_ssh_keys: JSON.stringify(
+        recreateSshKeys
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      ),
     };
 
     if (smtpHost) {
@@ -110,6 +125,20 @@ export default function SettingsView() {
             <option key={tz} value={tz}>{tz}</option>
           ))}
         </select>
+      </div>
+
+      {/* Email notifications */}
+      <div className="card">
+        <h2 className="font-semibold mb-1">Recreation SSH Keys</h2>
+        <p className="text-do-muted text-sm mb-4">
+          Required for recreation. Enter DigitalOcean SSH key IDs or fingerprints, comma-separated.
+        </p>
+        <input
+          className="input"
+          placeholder="123456, 789012 or aa:bb:cc:dd:..."
+          value={recreateSshKeys}
+          onChange={(e) => setRecreateSshKeys(e.target.value)}
+        />
       </div>
 
       {/* Email notifications */}

@@ -188,17 +188,29 @@ export async function createDropletFromSnapshot(
   region: string,
   size: string,
   snapshotId: string,
-  tags: string[]
+  tags: string[],
+  sshKeys: Array<string | number>
 ): Promise<DODroplet> {
   const client = createClient(apiKey);
+  const payload: {
+    name: string;
+    region: string;
+    size: string;
+    image: string;
+    tags: string[];
+    ssh_keys?: Array<string | number>;
+  } = {
+    name,
+    region,
+    size,
+    image: snapshotId,
+    tags,
+  };
+  if (sshKeys.length > 0) {
+    payload.ssh_keys = sshKeys;
+  }
   const resp = await withRetry(() =>
-    client.post("/droplets", {
-      name,
-      region,
-      size,
-      image: snapshotId,
-      tags,
-    })
+    client.post("/droplets", payload)
   );
   return resp.data.droplet;
 }

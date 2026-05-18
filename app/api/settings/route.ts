@@ -3,7 +3,12 @@ import { getSetting, setSetting } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED_KEYS = ["smtp_config", "default_timezone", "notification_email"];
+const ALLOWED_KEYS = [
+  "smtp_config",
+  "default_timezone",
+  "notification_email",
+  "recreate_ssh_keys",
+];
 
 export async function GET() {
   const apiKey = await getSetting("api_key");
@@ -56,6 +61,30 @@ export async function PUT(req: NextRequest) {
         await setSetting(key, JSON.stringify(incoming));
       } catch {
         await setSetting(key, value);
+      }
+    } else if (key === "recreate_ssh_keys") {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) continue;
+        const normalized = parsed
+          .map((entry) => {
+            if (typeof entry === "number" || typeof entry === "string") {
+              return entry;
+            }
+            return null;
+          })
+          .filter((entry): entry is string | number => entry !== null);
+        await setSetting(key, JSON.stringify(normalized));
+      } catch {
+        const normalized = value
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .map((part) => {
+            const numeric = Number(part);
+            return Number.isInteger(numeric) ? numeric : part;
+          });
+        await setSetting(key, JSON.stringify(normalized));
       }
     } else {
       await setSetting(key, value);
