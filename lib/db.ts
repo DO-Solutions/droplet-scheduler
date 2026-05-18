@@ -139,14 +139,10 @@ export class DbAdapter {
         "sslsni",
         "uselibpqcompat",
       ];
-      let changed = false;
       for (const key of sslParams) {
-        if (url.searchParams.has(key)) {
-          url.searchParams.delete(key);
-          changed = true;
-        }
+        url.searchParams.delete(key);
       }
-      return changed ? url.toString() : connectionString;
+      return url.toString();
     } catch {
       return connectionString;
     }
