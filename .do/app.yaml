@@ -1,0 +1,31 @@
+name: do-lifecycle-scheduler
+services:
+- name: web
+  github:
+    repo: aksprat/do-lifecycle-scheduler
+    branch: main
+    deploy_on_push: true
+  build_command: npm run build
+  run_command: npm start
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: apps-s-1vcpu-0.5gb
+  routes:
+  - path: /
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
+  - key: DATABASE_SSL_MODE
+    scope: RUN_TIME
+    value: verify-full
+  - key: NODE_ENV
+    scope: RUN_TIME
+    value: production
+databases:
+- name: db
+  engine: PG
+  version: "16"
+  # dev-tier is suitable for development/testing; upgrade size for production workloads
+  size: db-s-dev-database
+  num_nodes: 1
