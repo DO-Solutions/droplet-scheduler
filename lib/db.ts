@@ -146,7 +146,9 @@ export class DbAdapter {
       return url.toString();
     } catch {
       // Keep original value if parsing fails (avoid logging potentially sensitive DSN content).
-      console.warn("Failed to parse DATABASE_URL for SSL parameter stripping.");
+      console.warn(
+        "Failed to parse DATABASE_URL for SSL parameter stripping; using original value."
+      );
       return connectionString;
     }
   }
@@ -185,8 +187,8 @@ export class DbAdapter {
         ? this.normalizePemCertificate(process.env.DATABASE_CA_CERT)
         : undefined;
       if (ca) {
-        const hasPemHeader = ca.includes("-----BEGIN CERTIFICATE-----");
-        const hasPemFooter = ca.includes("-----END CERTIFICATE-----");
+        const hasPemHeader = /-----BEGIN CERTIFICATE-----/i.test(ca);
+        const hasPemFooter = /-----END CERTIFICATE-----/i.test(ca);
         if (!hasPemHeader || !hasPemFooter) {
           throw new Error(
             "DATABASE_CA_CERT must be a valid PEM certificate when provided."
