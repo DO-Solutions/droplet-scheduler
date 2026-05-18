@@ -2,6 +2,8 @@
 
 > Automate DigitalOcean Droplet lifecycle: **snapshot → delete → recreate → health-check** on a recurring weekly schedule.
 
+[![Deploy to DO](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/aksprat/do-lifecycle-scheduler/tree/main)
+
 ---
 
 ## What it does
