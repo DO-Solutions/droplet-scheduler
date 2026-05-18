@@ -145,6 +145,7 @@ export class DbAdapter {
       }
       return url.toString();
     } catch {
+      // Keep original value if parsing fails (avoid logging potentially sensitive DSN content).
       return connectionString;
     }
   }
