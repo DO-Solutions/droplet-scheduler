@@ -116,6 +116,43 @@ export class DbAdapter {
   private pgPool: import("pg").Pool | null = null;
   private initPromise: Promise<void> | null = null;
 
+  private normalizePemCertificate(raw: string): string {
+    let cert = raw.trim();
+    if (
+      (cert.startsWith('"') && cert.endsWith('"')) ||
+      (cert.startsWith("'") && cert.endsWith("'"))
+    ) {
+      cert = cert.slice(1, -1);
+    }
+    return cert.replace(/\\n/g, "\n");
+  }
+
+  private stripSslUrlParams(connectionString: string): string {
+    try {
+      const url = new URL(connectionString);
+      const sslParams = [
+        "sslmode",
+        "sslrootcert",
+        "sslcert",
+        "sslkey",
+        "sslpassword",
+        "sslsni",
+        "uselibpqcompat",
+        "gssencmode",
+      ];
+      for (const key of sslParams) {
+        url.searchParams.delete(key);
+      }
+      return url.toString();
+    } catch {
+      // Keep original value if parsing fails (avoid logging potentially sensitive DSN content).
+      console.warn(
+        "Failed to parse DATABASE_URL for SSL parameter stripping; using original value."
+      );
+      return connectionString;
+    }
+  }
+
   /** Ensure schema is created exactly once (lazy, async). */
   private ensureInit(): Promise<void> {
     if (!this.initPromise) {
@@ -132,6 +169,7 @@ export class DbAdapter {
     }
 
     const { Pool } = await import("pg");
+    const connectionString = this.stripSslUrlParams(process.env.DATABASE_URL);
     const sslMode = process.env.DATABASE_SSL_MODE ?? "verify-full";
     if (!["disable", "require", "verify-ca", "verify-full"].includes(sslMode)) {
       throw new Error(
@@ -145,10 +183,12 @@ export class DbAdapter {
     } else if (sslMode === "require") {
       ssl = { rejectUnauthorized: false };
     } else {
-      const ca = process.env.DATABASE_CA_CERT;
+      const ca = process.env.DATABASE_CA_CERT
+        ? this.normalizePemCertificate(process.env.DATABASE_CA_CERT)
+        : undefined;
       if (ca) {
-        const hasPemHeader = ca.includes("-----BEGIN CERTIFICATE-----");
-        const hasPemFooter = ca.includes("-----END CERTIFICATE-----");
+        const hasPemHeader = /-----BEGIN CERTIFICATE-----/i.test(ca);
+        const hasPemFooter = /-----END CERTIFICATE-----/i.test(ca);
         if (!hasPemHeader || !hasPemFooter) {
           throw new Error(
             "DATABASE_CA_CERT must be a valid PEM certificate when provided."
@@ -158,7 +198,7 @@ export class DbAdapter {
       ssl = ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
     }
     this.pgPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl,
     });
 

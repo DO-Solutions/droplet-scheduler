@@ -67,8 +67,8 @@ Enter your [DigitalOcean Personal Access Token](https://cloud.digitalocean.com/a
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | _(required)_ | Managed PostgreSQL connection string used by the app for all persistent data |
-| `DATABASE_SSL_MODE` | `verify-full` | PostgreSQL TLS mode (`disable`, `require`, `verify-ca`, `verify-full`). Use `verify-full` for managed production databases; use `disable` only for local non-TLS PostgreSQL |
-| `DATABASE_CA_CERT` | _(unset)_ | Optional CA certificate content (PEM) for strict TLS verification when required by your PostgreSQL provider |
+| `DATABASE_SSL_MODE` | `verify-full` | PostgreSQL TLS mode (`disable`, `require`, `verify-ca`, `verify-full`). Use `verify-full` for managed production databases; use `disable` only for local non-TLS PostgreSQL. TLS params in `DATABASE_URL` query are ignored in favor of this setting |
+| `DATABASE_CA_CERT` | _(unset)_ | Optional CA certificate content (PEM) for strict TLS verification when required by your PostgreSQL provider. Supports multiline PEM or single-line values with `\n` escapes |
 | `PORT` | `3000` | Port the server listens on |
 | `NODE_ENV` | `development` | Set to `production` in deployment |
 
