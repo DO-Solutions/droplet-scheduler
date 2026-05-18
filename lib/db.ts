@@ -138,6 +138,7 @@ export class DbAdapter {
         "sslpassword",
         "sslsni",
         "uselibpqcompat",
+        "gssencmode",
       ];
       for (const key of sslParams) {
         url.searchParams.delete(key);
